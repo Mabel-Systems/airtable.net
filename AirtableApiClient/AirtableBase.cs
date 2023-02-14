@@ -98,13 +98,14 @@ namespace AirtableApiClient
             string cellFormat = null,
             string timeZone = null,
             string userLocale = null,
-            bool returnFieldsByFieldId = false
+            bool returnFieldsByFieldId = false,
+            bool useHttpGet = false
             )
         {
             HttpResponseMessage response = await ListRecordsInternal(tableName, offset, fields, filterByFormula,
                 maxRecords, pageSize, sort, view,
-                cellFormat, timeZone, userLocale, 
-                returnFieldsByFieldId
+                cellFormat, timeZone, userLocale,
+                returnFieldsByFieldId, useHttpGet
                 ).ConfigureAwait(false);
             AirtableApiException error = await CheckForAirtableException(response).ConfigureAwait(false);
             if (error != null)
@@ -139,11 +140,13 @@ namespace AirtableApiClient
             string cellFormat = null,
             string timeZone = null,
             string userLocale = null,
-            bool returnFieldsByFieldId = false
+            bool returnFieldsByFieldId = false,
+            bool useHttpGet = false
             )
         {
             HttpResponseMessage response = await ListRecordsInternal(tableName, offset, fields, filterByFormula,
-                maxRecords, pageSize, sort, view, cellFormat, timeZone, userLocale, returnFieldsByFieldId).ConfigureAwait(false);
+                maxRecords, pageSize, sort, view, cellFormat, timeZone, userLocale, returnFieldsByFieldId,
+                useHttpGet).ConfigureAwait(false);
             AirtableApiException error = await CheckForAirtableException(response).ConfigureAwait(false);
             if (error != null)
             {
@@ -469,12 +472,12 @@ namespace AirtableApiClient
 
         //----------------------------------------------------------------------------
         //
-        // AirtableBase.BuildUriForListRecords
+        // AirtableBase.BuildRequestForListRecords
         //
-        // Build URI for the List Records operation
+        // Build request for the List Records operation
         //
         //----------------------------------------------------------------------------
-        private Uri BuildUriForListRecords(
+        private HttpRequestMessage BuildRequestForListRecords(
             string tableName,
             string offset,
             IEnumerable<string> fields,
@@ -486,35 +489,57 @@ namespace AirtableApiClient
             string cellFormat,
             string timeZone,
             string userLocale,
-            bool returnFieldsByFieldId)
+            bool returnFieldsByFieldId,
+            bool useHttpGet)
         {
             var uriBuilder = new UriBuilder(AIRTABLE_API_URL + BaseId + "/" + Uri.EscapeDataString(tableName));
+            var body = new ListRecordsBody();
 
-            if (!string.IsNullOrEmpty(offset))
+            if (!string.IsNullOrEmpty(offset) && useHttpGet)
             {
                 AddParametersToQuery(ref uriBuilder, $"offset={HttpUtility.UrlEncode(offset)}");
             }
+            else if (!string.IsNullOrEmpty(offset))
+            {
+                body.Offset = offset;
+            }
 
-            if (fields != null)
+            if (fields != null && useHttpGet)
             {
                 string flattenFieldsParam = QueryParamHelper.FlattenFieldsParam(fields);
                 AddParametersToQuery(ref uriBuilder, flattenFieldsParam);
             }
+            else if (fields != null)
+            {
+                body.Fields = fields;
+            }
 
-            if (!string.IsNullOrEmpty(filterByFormula))
+            if (!string.IsNullOrEmpty(filterByFormula) && useHttpGet)
             {
                 AddParametersToQuery(ref uriBuilder, $"filterByFormula={HttpUtility.UrlEncode(filterByFormula)}");
             }
+            else if (!string.IsNullOrEmpty(filterByFormula))
+            {
+                body.FilterByFormula = filterByFormula;
+            }
 
-            if (sort != null)
+            if (sort != null && useHttpGet)
             {
                 string flattenSortParam = QueryParamHelper.FlattenSortParam(sort);
                 AddParametersToQuery(ref uriBuilder, flattenSortParam);
             }
+            else if (sort != null)
+            {
+                body.Sort = sort;
+            }
 
-            if (!string.IsNullOrEmpty(view))
+            if (!string.IsNullOrEmpty(view) && useHttpGet)
             {
                 AddParametersToQuery(ref uriBuilder, $"view={HttpUtility.UrlEncode(view)}");
+            }
+            else if (!string.IsNullOrEmpty(view))
+            {
+                body.View = view;
             }
 
             if (maxRecords != null)
@@ -523,7 +548,15 @@ namespace AirtableApiClient
                 {
                     throw new ArgumentException("Maximum Number of Records must be > 0", "maxRecords");
                 }
-                AddParametersToQuery(ref uriBuilder, $"maxRecords={maxRecords}");
+
+                if (useHttpGet)
+                {
+                    AddParametersToQuery(ref uriBuilder, $"maxRecords={maxRecords}");
+                }
+                else
+                {
+                    body.MaxRecords = maxRecords;
+                }
             }
 
             if (pageSize != null)
@@ -532,7 +565,15 @@ namespace AirtableApiClient
                 {
                     throw new ArgumentException("Page Size must be > 0 and <= 100", "pageSize");
                 }
-                AddParametersToQuery(ref uriBuilder, $"pageSize={pageSize}");
+
+                if (useHttpGet)
+                {
+                    AddParametersToQuery(ref uriBuilder, $"pageSize={pageSize}");
+                }
+                else
+                {
+                    body.PageSize = pageSize;
+                }
             }
 
             if (!string.IsNullOrEmpty(timeZone))
@@ -545,16 +586,32 @@ namespace AirtableApiClient
                 AddParametersToQuery(ref uriBuilder, $"userLocale={HttpUtility.UrlEncode(userLocale)}");
             }
 
-            if (!string.IsNullOrEmpty(cellFormat) && !string.IsNullOrEmpty(timeZone) && !string.IsNullOrEmpty(userLocale))
+            if (!string.IsNullOrEmpty(cellFormat) && !string.IsNullOrEmpty(timeZone) && !string.IsNullOrEmpty(userLocale) && useHttpGet)
             {
                 AddParametersToQuery(ref uriBuilder, $"cellFormat={HttpUtility.UrlEncode(cellFormat)}");
             }
+            else if (!string.IsNullOrEmpty(cellFormat) && !string.IsNullOrEmpty(timeZone) && !string.IsNullOrEmpty(userLocale))
+            {
+                body.CellFormat = cellFormat;
+            }
 
-            if (returnFieldsByFieldId != false)
+            if (returnFieldsByFieldId != false && useHttpGet)
             {
                 AddParametersToQuery(ref uriBuilder, $"returnFieldsByFieldId={returnFieldsByFieldId}");
             }
-            return uriBuilder.Uri;
+            else if (returnFieldsByFieldId != false)
+            {
+                body.ReturnFieldsByFieldId = returnFieldsByFieldId;
+            }
+
+            var request = new HttpRequestMessage
+            {
+                Method = useHttpGet ? HttpMethod.Get : HttpMethod.Post,
+                Content = useHttpGet ? null : new StringContent(JsonSerializer.Serialize(body)),
+                RequestUri = uriBuilder.Uri
+            };
+
+            return request;
         }
 
 
@@ -819,7 +876,8 @@ namespace AirtableApiClient
             string cellFormat,
             string timeZone,
             string userLocale,
-            bool returnFieldsByFieldId)
+            bool returnFieldsByFieldId,
+            bool useHttpGet)
         {
             if (string.IsNullOrEmpty(tableName))
             {
@@ -832,11 +890,39 @@ namespace AirtableApiClient
                     throw new ArgumentException("Both \'timeZone\' and \'userLocal\' parameters are required when using \'string\' as \'cellFormat\'.");
                 }
             }
-            var uri = BuildUriForListRecords(tableName, offset, fields, filterByFormula, maxRecords, pageSize, sort, view, cellFormat, timeZone, userLocale, returnFieldsByFieldId);
-            var request = new HttpRequestMessage(HttpMethod.Get, uri);
+
+            var request = BuildRequestForListRecords(tableName, offset, fields, filterByFormula, maxRecords, pageSize, sort, view, cellFormat, timeZone, userLocale, returnFieldsByFieldId, useHttpGet);
             return (await httpClientWithRetries.SendAsync(request).ConfigureAwait(false));
         }
 
+        //----------------------------------------------------------------------------
+        //
+        // AirtableBase.ListRecordsBody
+        //
+        // Used to build the body for list records request when using POST
+        //
+        //----------------------------------------------------------------------------
+        private class ListRecordsBody
+        {
+            [JsonPropertyName("offset")]
+            public string Offset { get; set; }
+            [JsonPropertyName("fields")]
+            public IEnumerable<string> Fields { get; set; }
+            [JsonPropertyName("filterByFormula")]
+            public string FilterByFormula { get; set; }
+            [JsonPropertyName("maxRecords")]
+            public int? MaxRecords { get; set; }
+            [JsonPropertyName("pageSize")]
+            public int? PageSize { get; set; }
+            [JsonPropertyName("sort")]
+            public IEnumerable<Sort> Sort { get; set; }
+            [JsonPropertyName("view")]
+            public string View { get; set; }
+            [JsonPropertyName("cellFormat")]
+            public string CellFormat { get; set; }
+            [JsonPropertyName("returnFieldsByFieldId")]
+            public bool ReturnFieldsByFieldId { get; set; }
+        }
     }   // end class
 
 }
