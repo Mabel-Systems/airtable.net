@@ -492,7 +492,14 @@ namespace AirtableApiClient
             bool returnFieldsByFieldId,
             bool useHttpGet)
         {
-            var uriBuilder = new UriBuilder(AIRTABLE_API_URL + BaseId + "/" + Uri.EscapeDataString(tableName));
+            var baseUrl = AIRTABLE_API_URL + BaseId + "/" + Uri.EscapeDataString(tableName);
+
+            if (!useHttpGet)
+            {
+                baseUrl += "/listRecords";
+            }
+
+            var uriBuilder = new UriBuilder(baseUrl);
             var body = new ListRecordsBody();
 
             if (!string.IsNullOrEmpty(offset) && useHttpGet)
@@ -607,7 +614,7 @@ namespace AirtableApiClient
             var request = new HttpRequestMessage
             {
                 Method = useHttpGet ? HttpMethod.Get : HttpMethod.Post,
-                Content = useHttpGet ? null : new StringContent(JsonSerializer.Serialize(body)),
+                Content = useHttpGet ? null : new StringContent(JsonSerializer.Serialize(body, JsonOptionIgnoreNullValues), Encoding.UTF8, "application/json"),
                 RequestUri = uriBuilder.Uri
             };
 
